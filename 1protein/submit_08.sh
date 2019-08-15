@@ -6,7 +6,7 @@
 #SBATCH --time=128:00:00   # Use the form DD-HH:MM:SS
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --job-name=fb-s-08
+#SBATCH --job-name=fb-08
 #SBATCH --export=ALL
 
 ##SBATCH --gres=gpu:1
@@ -18,4 +18,4 @@
 #INCREMENT=0.1
 #CONCENTRATION=`echo "$MIN + $INCREMENT * ($SLURM_ARRAY_TASK_ID - 1)" | bc`
 
-./MC3D 0.8 $SLURM_ARRAY_TASK_ID
+./MC3D 0.8 3000000000 12000 5 $SLURM_ARRAY_TASK_ID
