@@ -17,6 +17,11 @@ void placeBlock(int ***arr, int x, int y, int z, int length, int Ym, int current
 
 void initialize(int ***array, int Xm, int Ym, int Zm, int blocks, int length);
 
-std::tuple<int, int, int> coord(int ***array, int Xm, int Ym, int Zm, int currentBlock);
+std::tuple<int, int, int> coord(int ***array, int Xm, int Ym, int Zm, int length, int currentBlock);
+
+bool
+energyCheck(int ***array, int Xm, int Ym, int Zm, double bondEn, int length, int bid, int xRand, int yRand, int zRand);
+
+bool moveCheck(int ***array, int Xm, int Ym, int Zm, int length, int bid, int xRand, int yRand, int zRand);
 
 #endif //FOOTBALL_VER2_LATTICE_H

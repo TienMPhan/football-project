@@ -70,7 +70,7 @@ void initialize(int ***array, int Xm, int Ym, int Zm, int blocks, int length) {
     }
 }
 
-std::tuple<int, int, int> coord(int ***array, int Xm, int Ym, int Zm, int currentBlock) {
+std::tuple<int, int, int> coord(int ***array, int Xm, int Ym, int Zm, int length, int currentBlock) {
     int posX = 0;
     int posY = 0;
     int posZ = 0;
@@ -78,14 +78,74 @@ std::tuple<int, int, int> coord(int ***array, int Xm, int Ym, int Zm, int curren
         for (int y = 0; y < Ym; ++y) {
             for (int z = 0; z < Zm; ++z) {
                 if (array[x][y][z] == currentBlock) {
-                    posX = x;
-                    posY = y;
-                    posZ = z;
-                    goto stop;
+                    if (array[x][(y - 1 + Ym) % Ym][z] == currentBlock) {
+                        for (int i = 0; i < length - 1; ++i) {
+                            if (array[x][(y - 1 + Ym + i) % Ym][z] != currentBlock) {
+                                posX = x;
+                                posY = (y - 1 + Ym + i) % Ym;
+                                posZ = z;
+                                goto stop;
+                            }
+                        }
+                    } else {
+                        posX = x;
+                        posY = y;
+                        posZ = z;
+                        goto stop;
+                    }
+
                 }
             }
         }
     }
     stop:
     return std::make_tuple(posX, posY, posZ);
+}
+
+bool
+energyCheck(int ***array, int Xm, int Ym, int Zm, double bondEn, int length, int bid, int xRand, int yRand, int zRand) {
+    int energy1 = 0;
+    int energy2 = 0;
+    int xVal = std::get<0>(coord(array, Xm, Ym, Zm, length, bid));
+    int yVal = std::get<1>(coord(array, Xm, Ym, Zm, length, bid));
+    int zVal = std::get<2>(coord(array, Xm, Ym, Zm, length, bid));
+    for (int y = 0; y < length; y++) {
+        for (int z = -1; z <= 1; z += 2) {
+            if (array[xVal][pos(yVal + y, Ym)][pos(zVal + z, Zm)] != 0 &&
+                array[xVal][pos(yVal + y, Ym)][pos(zVal + z, Zm)] != bid)
+                energy1++;
+            if (array[xVal][pos(yVal + y + yRand, Ym)][pos(zVal + z + zRand, Zm)] != 0 &&
+                array[xVal][pos(yVal + y + yRand, Ym)][pos(zVal + z + zRand, Zm)] != bid)
+                energy2++;
+        }
+    }
+    for (int y = 0; y < length; y++) {
+        for (int x = -1; x <= 1; x += 2) {
+            if (array[pos(xVal + x, Xm)][pos(yVal + y, Ym)][zVal] != 0 &&
+                array[pos(xVal + x, Xm)][pos(yVal + y, Ym)][zVal] != bid)
+                energy1++;
+            if (array[pos(xVal + x + xRand, Xm)][pos(yVal + y + yRand, Ym)][zVal] != 0 &&
+                array[pos(xVal + x + xRand, Xm)][pos(yVal + y + yRand, Ym)][zVal] != bid)
+                energy2++;
+        }
+    }
+    double dE = energy2 - energy1;
+    //printf("E1: %d, E2: %d, dE: %.1f\n", energy1, energy2, dE);
+    if (dE >= 0) return true;
+    double boltzmannWeight = exp(dE * bondEn);
+    double r = randDouble();
+    //printf("r: %f, Boltzmann weight: %f\n", r, boltzmannWeight);
+    return r < boltzmannWeight;
+}
+
+bool moveCheck(int ***array, int Xm, int Ym, int Zm, int length, int bid, int xRand, int yRand, int zRand) {
+    int xVal = std::get<0>(coord(array, Xm, Ym, Zm, length, bid));
+    int yVal = std::get<1>(coord(array, Xm, Ym, Zm, length, bid));
+    int zVal = std::get<2>(coord(array, Xm, Ym, Zm, length, bid));
+    for (int i = 0; i < length; i++) {
+        if (array[pos(xVal + xRand, Xm)][pos(yVal + yRand + i, Ym)][pos(zVal + zRand, Zm)] != 0 &&
+            array[pos(xVal + xRand, Xm)][pos(yVal + yRand + i, Ym)][pos(zVal + zRand, Zm)] != bid)
+            return false;
+    }
+    return true;
 }
