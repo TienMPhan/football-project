@@ -114,8 +114,8 @@ energyCheck(int ***array, int Xm, int Ym, int Zm, double bondEn, int length, int
             if (array[xVal][pos(yVal + y, Ym)][pos(zVal + z, Zm)] != 0 &&
                 array[xVal][pos(yVal + y, Ym)][pos(zVal + z, Zm)] != bid)
                 energy1++;
-            if (array[xVal][pos(yVal + y + yRand, Ym)][pos(zVal + z + zRand, Zm)] != 0 &&
-                array[xVal][pos(yVal + y + yRand, Ym)][pos(zVal + z + zRand, Zm)] != bid)
+            if (array[pos(xVal + xRand, Xm)][pos(yVal + y + yRand, Ym)][pos(zVal + z + zRand, Zm)] != 0 &&
+                array[pos(xVal + xRand, Xm)][pos(yVal + y + yRand, Ym)][pos(zVal + z + zRand, Zm)] != bid)
                 energy2++;
         }
     }
@@ -124,18 +124,21 @@ energyCheck(int ***array, int Xm, int Ym, int Zm, double bondEn, int length, int
             if (array[pos(xVal + x, Xm)][pos(yVal + y, Ym)][zVal] != 0 &&
                 array[pos(xVal + x, Xm)][pos(yVal + y, Ym)][zVal] != bid)
                 energy1++;
-            if (array[pos(xVal + x + xRand, Xm)][pos(yVal + y + yRand, Ym)][zVal] != 0 &&
-                array[pos(xVal + x + xRand, Xm)][pos(yVal + y + yRand, Ym)][zVal] != bid)
+            if (array[pos(xVal + x + xRand, Xm)][pos(yVal + y + yRand, Ym)][pos(zVal + zRand, Zm)] != 0 &&
+                array[pos(xVal + x + xRand, Xm)][pos(yVal + y + yRand, Ym)][pos(zVal + zRand, Zm)] != bid)
                 energy2++;
         }
     }
     double dE = energy2 - energy1;
-    //printf("E1: %d, E2: %d, dE: %.1f\n", energy1, energy2, dE);
+    printf("E1: %d, E2: %d, dE: %.1f\n", energy1, energy2, dE);
     if (dE >= 0) return true;
-    double boltzmannWeight = exp(dE * bondEn);
-    double r = randDouble();
-    //printf("r: %f, Boltzmann weight: %f\n", r, boltzmannWeight);
-    return r < boltzmannWeight;
+    else {
+        double boltzmannWeight = exp(dE * bondEn);
+        double r = randDouble();
+        printf("r: %f, Boltzmann weight: %f\n", r, boltzmannWeight);
+        return r < boltzmannWeight;
+    }
+
 }
 
 bool moveCheck(int ***array, int Xm, int Ym, int Zm, int length, int bid, int xRand, int yRand, int zRand) {
