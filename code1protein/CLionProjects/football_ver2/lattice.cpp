@@ -130,12 +130,12 @@ energyCheck(int ***array, int Xm, int Ym, int Zm, double bondEn, int length, int
         }
     }
     double dE = energy2 - energy1;
-    printf("E1: %d, E2: %d, dE: %.1f\n", energy1, energy2, dE);
+    //printf("E1: %d, E2: %d, dE: %.1f\n", energy1, energy2, dE);
     if (dE >= 0) return true;
     else {
         double boltzmannWeight = exp(dE * bondEn);
         double r = randDouble();
-        printf("r: %f, Boltzmann weight: %f\n", r, boltzmannWeight);
+        //printf("r: %f, Boltzmann weight: %f\n", r, boltzmannWeight);
         return r < boltzmannWeight;
     }
 
