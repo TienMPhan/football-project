@@ -63,20 +63,8 @@ int main(int argc, char* argv[]) {
     int dimension = 4;
     // allocate memory and initialize lattice with 0
     int*** lattice = allocate3dMatrix(Xm, Ym, Zm);
-    for (int x = 0; x < Xm; ++x) {
-        for (int y = 0; y < Ym; ++y) {
-            for (int z = 0; z < Zm; ++z) {
-                lattice[x][y][z] = 0;
-            }
-        }
-    }
     // allocate memmory and initialize coord with 0
     int** coord = allocate2dMatrix(blocks, dimension);
-    for (int i = 0; i < blocks; ++i) {
-        for (int j = 0; j < dimension; ++j) {
-            coord[i][j] = 0;
-        }
-    }
     // create initial state
     initialize(lattice, coord, blocks, length);
     long long int count = 1;
@@ -148,8 +136,12 @@ void writexyz(int*** lattice, double bondEn, int blocks, int length, int runId, 
 int **allocate2dMatrix(int blocks, int dimension){
     int** Matrix;
     Matrix = new int *[blocks];
-    for(int i = 0; i < blocks; i++)
+    for(int i = 0; i < blocks; i++) {
         Matrix[i] = new int[dimension];
+        for (int j = 0; j < dimension; j++) {
+            Matrix[i][j] = 0;
+        }
+    }
     return Matrix;
 }
 
@@ -166,6 +158,9 @@ int ***allocate3dMatrix(int dimX, int dimY, int dimZ) {
         matrix[x] = new int *[dimY];
         for (int y = 0; y < dimY; ++y) {
             matrix[x][y] = new int[dimZ];
+            for (int z = 0; z < dimZ; z++) {
+                matrix[x][y][z] = 0;
+            }
         }
     }
     return matrix;
