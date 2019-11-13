@@ -96,41 +96,55 @@ int main(int argc, char* argv[]) {
 }
 void writeLattice(int*** lattice, double bondEn, int length, int runId, long long int count, long long int split, int rep){
     char latticeFileName[128];
+    char printBuffer[Xm * Ym * Zm * 13];
+    int **latticeX, *latticeY;
     snprintf(latticeFileName, 128, "En-%f/L%.2fL%d-run%d-id-%d-split-%d.txt", bondEn, bondEn, length, rep, runId, int(count/split));
-    FILE *f = fopen(latticeFileName, "w");
     for (int x = 0; x < Xm; x++){
+        latticeX = lattice[x];
         for (int y = 0; y < Ym; y++){
+            latticeY = latticeX[y];
             for (int z = 0; z < Zm; z++){
-                fprintf(f, "%d ", lattice[x][y][z]);
+                snprintf(printBuffer, 11, "%d ", latticeY[z]);
             }
-            fprintf(f, "\n");
+            snprintf(printBuffer, 1, "\n");
         }
-        fprintf(f, "\n");
+        snprintf(printBuffer, 1, "\n");
     }
+    FILE *f = fopen(latticeFileName, "w");
+    fprintf(f, printBuffer);
     fclose(f);
 }
 void writeCoordinates(int** coord, double bondEn, int blocks, int length, int runId, long long int count, long long int split, int rep){
     char coordinateFileName[128];
+    char printBuffer[blocks * 83];
+    int *tempCoord;
     snprintf(coordinateFileName, 128, "En-%f/C%.2fL%d-run%d-id-%d-split-%d.txt", bondEn, bondEn, length, rep, runId, int(count/split));
-    FILE *f = fopen(coordinateFileName, "w");
     for (int i = 0; i < blocks; i++){
-        fprintf(f, "%d %d %d %d\n", coord[i][0], coord[i][1], coord[i][2], coord[i][3]);
+        tempCoord = coord[i];
+        snprintf(printBuffer, 83, "%d %d %d %d\n", tempCoord[0], tempCoord[1], tempCoord[2], tempCoord[3]);
     }
+    FILE *f = fopen(coordinateFileName, "w");
+    fprintf(f, printBuffer);
     fclose(f);
 }
 void writexyz(int*** lattice, double bondEn, int blocks, int length, int runId, long long int count, long long int split, int rep){
     char xyzFileName[128];
+    char printBuffer[12 + (Xm * Ym * Zm * 35)];
+    float floatX, floatY;
     snprintf(xyzFileName, 128, "En-%f/VMD%.2fL%d-run%d-id-%d-split-%d.xyz", bondEn, bondEn, length, rep, runId, int(count/split));
-    FILE *f = fopen(xyzFileName, "w");
-    fprintf(f, "%d\n\n", blocks*length);
+    snprintf(printBuffer, 12, "%d\n\n", blocks * length);
     for(int x = 0; x < Xm; x++){
+        floatX = x * 0.2;
         for(int y = 0; y < Ym; y++){
+            floatY = y * 0.2;
             for(int z = 0; z < Zm; z++){
                 if (lattice[x][y][z])
-                    fprintf(f, "C %.4f %.4f %.4f\n", z*0.2, y*0.2, x*0.2);
+                    snprintf(printBuffer, 35, "C %.4f %.4f %.4f\n", z*0.2, floatY, floatX);
             }
         }
     }
+    FILE *f = fopen(xyzFileName, "w");
+    fprintf(f, printBuffer);
     fclose(f);
 }
 int **allocate2dMatrix(int blocks, int dimension){
