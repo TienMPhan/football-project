@@ -8,9 +8,8 @@
 
 using namespace std;
 
-#define Xm 200
-#define Ym 500
-#define Zm 200
+string outputDir;
+int Xm, Ym, Zm;
 
 // lattice and coordinate array
 int **allocate2dMatrix(int blocks, int dimension);
@@ -21,6 +20,7 @@ void deallocate3dMatrix(int ***matrix, int dimX, int dimY);
 // random number
 int randint(int lower, int upper);
 double randDouble();
+
 // Metropolis algorithm functions
 int pos(int val, int max);
 bool checkSpace(int ***arr, int x, int y, int z, int length);
@@ -30,21 +30,25 @@ void initialize(int ***array, int **cord, int blocks, int length);
 bool energyCheck(int ***array, int **cord, double bondEn, int length, int bid, int xRand, int yRand, int zRand);
 bool moveCheck(int ***array, int **cord, int length, int bid, int xRand, int yRand, int zRand);
 void updatePos(int ***array, int **cord, int length, int bid, int xRand, int yRand, int zRand);
+
 // parse params
 tuple<string, string, string, string, string, string> parseParams(int argc, char *argv[]);
+
 // write data
 void writexyz(int ***lattice, double bondEn, int blocks, int length, int runId, unsigned long count, unsigned long split, int rep);
 void writeLattice(int ***lattice, double bondEn, int length, int runId, unsigned long count, unsigned long split, int rep);
 void writeCoordinates(int **coord, double bondEn, int blocks, int length, int runId, unsigned long count, unsigned long split, int rep);
 
+// seeding random generator
 default_random_engine dre(chrono::steady_clock::now().time_since_epoch().count());
 
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[])
+{
 
 #ifdef DEBUG
     double elapsedTime;
-	struct timeval t1, t2;
-	processMem_t mem;
+    struct timeval t1, t2;
+    processMem_t mem;
 
     gettimeofday(&t1, NULL);
 #endif
@@ -53,27 +57,31 @@ int main(int argc, char* argv[]) {
     {
         printf("err: check input parameters!\n");
     }
+
+    // environment setup
+    outputDir = string(getenv("JOB_OUTPUT_DIR"));
+    int rep_write = atoi(getenv("WRITE_ID"));
+    int dimension = atoi(getenv("DIMENSIONS"));
+    Xm = atoi(getenv("XM"));
+    Ym = atoi(getenv("YM"));
+    Zm = atoi(getenv("ZM"));
+
     // parse input params
     tuple<string, string, string, string, string, string> parsedParamsTuple = parseParams(argc, argv);
-    double bondEn = stof(get<0>(parsedParamsTuple));
+    string bondEnStr = get<0>(parsedParamsTuple);
+    double bondEn = stof(bondEnStr);
     int blocks = stoi(get<1>(parsedParamsTuple));
     int length = stoi(get<2>(parsedParamsTuple));
     unsigned long iterations = stoul(get<3>(parsedParamsTuple));
     unsigned long split = stoul(get<4>(parsedParamsTuple));
     int runId = stoi(get<5>(parsedParamsTuple));
 
-    // writing id
-    int rep_write = 1;
-
-    // make directory
-    string strEn = to_string(bondEn);
-    system(("mkdir -p En-" + strEn).c_str());
-
-    int dimension = 4;
     // allocate memory and initialize lattice with 0
     int ***lattice = allocate3dMatrix(Xm, Ym, Zm);
+
     // allocate memmory and initialize coord with 0
     int **coord = allocate2dMatrix(blocks, dimension);
+
     // create initial state
     initialize(lattice, coord, blocks, length);
     unsigned long count = 1;
@@ -104,22 +112,21 @@ int main(int argc, char* argv[]) {
     deallocate3dMatrix(lattice, Xm, Ym);
 
 #ifdef DEBUG
-        gettimeofday(&t2, NULL);
-		elapsedTime = getTimeDifferenceInMilliseconds(&t1, &t2);
-		getProcessMemory(&mem);
+    gettimeofday(&t2, NULL);
+    elapsedTime = getTimeDifferenceInMilliseconds(&t1, &t2);
+    getProcessMemory(&mem);
 
-        printf("\nEn-%f/C%.2fL%d-run%d-id-%d\n\tElapsed Time (ms): %f\n\tPhysical Memory (kB): %u\n\tVirtual Memory (kB): %u\n",
-            bondEn, bondEn, length, rep_write, runId, elapsedTime, mem.physicalMem, mem.virtualMem);
+    printf("\nEn-%f/C%.2fL%d-run%d-id-%d\n\tElapsed Time (ms): %f\n\tPhysical Memory (kB): %u\n\tVirtual Memory (kB): %u\n",
+           bondEn, bondEn, length, rep_write, runId, elapsedTime, mem.physicalMem, mem.virtualMem);
 #endif
 
     return 0;
 }
+
 void writeLattice(int ***lattice, double bondEn, int length, int runId, unsigned long count, unsigned long split, int rep)
 {
-    char latticeFileName[128];
     char printBuffer[Xm * Ym * Zm * 13];
     int **latticeX, *latticeY;
-    snprintf(latticeFileName, 128, "En-%f/L%.2fL%d-run%d-id-%d-split-%u.txt", bondEn, bondEn, length, rep, runId, (count / split));
     for (int x = 0; x < Xm; x++)
     {
         latticeX = lattice[x];
@@ -134,31 +141,29 @@ void writeLattice(int ***lattice, double bondEn, int length, int runId, unsigned
         }
         snprintf(printBuffer, 1, "\n");
     }
-    FILE *f = fopen(latticeFileName, "w");
+    string latticeFileName(outputDir + "/L" + to_string(bondEn) + "L" + to_string(length) + "-run" + to_string(rep) + "-id-" + to_string(runId) + "-split-" + to_string(count / split) + ".txt");
+    FILE *f = fopen(latticeFileName.c_str(), "w");
     fprintf(f, printBuffer);
     fclose(f);
 }
 void writeCoordinates(int **coord, double bondEn, int blocks, int length, int runId, unsigned long count, unsigned long split, int rep)
 {
-    char coordinateFileName[128];
     char printBuffer[blocks * 83];
     int *tempCoord;
-    snprintf(coordinateFileName, 128, "En-%f/C%.2fL%d-run%d-id-%d-split-%u.txt", bondEn, bondEn, length, rep, runId, (count / split));
     for (int i = 0; i < blocks; i++)
     {
         tempCoord = coord[i];
         snprintf(printBuffer, 83, "%d %d %d %d\n", tempCoord[0], tempCoord[1], tempCoord[2], tempCoord[3]);
     }
-    FILE *f = fopen(coordinateFileName, "w");
+    string coordinateFileName(outputDir + "/C" + to_string(bondEn) + "L" + to_string(length) + "-run" + to_string(rep) + "-id-" + to_string(runId) + "-split-" + to_string(count / split) + ".txt");
+    FILE *f = fopen(coordinateFileName.c_str(), "w");
     fprintf(f, printBuffer);
     fclose(f);
 }
 void writexyz(int ***lattice, double bondEn, int blocks, int length, int runId, unsigned long count, unsigned long split, int rep)
 {
-    char xyzFileName[128];
     char printBuffer[12 + (Xm * Ym * Zm * 35)];
     float floatX, floatY;
-    snprintf(xyzFileName, 128, "En-%f/VMD%.2fL%d-run%d-id-%d-split-%u.xyz", bondEn, bondEn, length, rep, runId, (count / split));
     snprintf(printBuffer, 12, "%d\n\n", blocks * length);
     for (int x = 0; x < Xm; x++)
     {
@@ -173,7 +178,8 @@ void writexyz(int ***lattice, double bondEn, int blocks, int length, int runId, 
             }
         }
     }
-    FILE *f = fopen(xyzFileName, "w");
+    string xyzFileName(outputDir + "/VMD" + to_string(bondEn) + "L" + to_string(length) + "-run" + to_string(rep) + "-id-" + to_string(runId) + "-split-" + to_string(count / split) + ".xyz");
+    FILE *f = fopen(xyzFileName.c_str(), "w");
     fprintf(f, printBuffer);
     fclose(f);
 }

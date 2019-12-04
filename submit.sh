@@ -1,66 +1,88 @@
 #!/bin/sh
-export PROJECT_DIR=$(dirname $(realpath $0))
-export OUTPUT_DIR=${PROJECT_DIR}/out
-slurmOutputFile=${OUTPUT_DIR}/slurm-%j.out
+export PROJECT_DIR=$(dirname $(realpath $0)) # directory where this script (submit.sh) is located
+export OUTPUT_DIR=${PROJECT_DIR}/out         # directory for program output (files, stdout, etc)
 
+# default variable values
 default_job_mailing_email=$(whoami)@ksu.edu
 default_job_mailing_type=ALL
 default_node_count=1
 default_core_count_per_node=1
+default_max_job_time=00-12:00:00
 default_submit_single_job=false
 default_duplicate_jobs_count=1
-default_bond_energy=0.5
 
+default_arg_bond_energy=0.5
+default_arg_iterations=10000000000
+default_arg_splits=2000000000
+default_arg_blocks=70000
+default_arg_length=5
+default_job_write_id=1
+default_dimensions=4
+default_xm=200
+default_ym=500
+default_zm=200
+
+# variable declarations
 job_mailing_email=$default_job_mailing_email
 job_mailing_type=$default_job_mailing_type
 export NODE_COUNT=$default_node_count
 export CORE_COUNT_PER_NODE=$default_core_count_per_node
+max_job_time=$default_max_job_time
 submit_single_job=$default_submit_single_job
 duplicate_jobs_count=$default_duplicate_jobs_count
-export BOND_ENERGY=$default_bond_energy
+
+arg_bond_energy=$default_arg_bond_energy
+arg_iterations=$default_arg_iterations
+arg_splits=$default_arg_splits
+arg_blocks=$default_arg_blocks
+arg_length=$default_arg_length
+export WRITE_ID=$default_job_write_id
+export DIMENSIONS=$default_dimensions
+export XM=$default_xm
+export YM=$default_ym
+export ZM=$default_zm
 
 show_script_help() {
     echo "
-flags (optional):
+    --help                      show script information
 	--email						set the email for job status to be sent to (default: ${default_job_mailing_email})
 	--email-type				set the types of job status that are sent to the given email (default: $default_job_mailing_type)
 	--nodes | -n				set the number of nodes (default: ${default_node_count})
 	--cores-per-node | -c		set the number of cores	per node (default: ${default_core_count_per_node})
+    --max-job-time              set the maximum time a job will run before being automatically cancelled (format: DD-HH:MM:SS) (default: $default_max_job_time)
 	--single | -s				flag to only submit one job with the given node count and core count per node (default: ${default_submit_single_job})
     --duplicate-jobs            set the number of times each job will run (default: ${default_duplicate_jobs_count})
-    --bond-energy               set the bond energy for one job submission (default: $default_bond_energy)
+
+    --bond-energy               set the bond energy for one job submission (default: $default_arg_bond_energy)
+    --iterations                set the total number of accepted moves (default: $default_arg_iterations)
+    --splits                    set the frequency of saving files (default: $default_arg_splits)
+    --blocks                    set the total blocks in the simulations block (default: $default_arg_blocks)
+    --length                    set the total units in the protein (default: $default_arg_length)
 "
 }
 
-submit_job() {
-    # Param #1 - ${1} - # of nodes
-    # Param #2 - ${2} - # of tasks/cores per node
-    # Param #3 - ${3} - # of times to run the code
-    # Param #4 - ${4} - Bond energy
-    Xm=200
-    Ym=500
-    Zm=200
-    blocks=70000
-    dimensions=4
-    memory=$((((($blocks * $dimensions * 256) + ($Xm * $Ym * $Zm * 32)) / 1000000) + 512))
+submit_slurm_job() {
+    export JOB_OUTPUT_DIR=${OUTPUT_DIR}/En-${arg_bond_energy}
+    mkdir -p $JOB_OUTPUT_DIR
+    slurm_output_file=${JOB_OUTPUT_DIR}/slurm-%j_${arg_bond_energy}L${arg_length}-run${WRITE_ID}.out
     if [ ! -z "$job_mailing_email" ] && [ ! -z $job_mailing_type ]; then
-        sbatch --constraint=elves --switches=1 --output=${slurmOutputFile} --error=${slurmOutputFile} --job-name=nv1.1d1-E${4}L5 \
-            --mem-per-cpu=${memory}M --time=0-12:00:00 --nodes=${1} --ntasks-per-node=${2} --array=1-${3} --mail-user=${job_mailing_email} \
-            --mail-type=${job_mailing_type} ${PROJECT_DIR}/sbatch.sh
-    else
-        sbatch --constraint=elves --switches=1 --output=${slurmOutputFile} --error=${slurmOutputFile} --job-name=nv1.1d1-E${4}L5 \
-            --mem-per-cpu=${memory}M --time=0-12:00:00 --nodes=${1} --ntasks-per-node=${2} --array=1-${3} ${PROJECT_DIR}/sbatch.sh
+        slurm_cmd_mailing_flags="--mail-user=${job_mailing_email} --mail-type=${job_mailing_type}"
     fi
+    memory=$((((($arg_blocks * $DIMENSIONS * 256) + ($XM * $YM * $ZM * 80) + ($arg_blocks * 83)) / 1000000) + 512))
+    sbatch --constraint=elves --output=${slurm_output_file} --error=${slurm_output_file} --job-name=nv1.1d1-E${arg_bond_energy}L5 \
+        --mem-per-cpu=${memory}M --time=${max_job_time} --nodes=${NODE_COUNT} --ntasks-per-node=${CORE_COUNT_PER_NODE} --array=1-${duplicate_jobs_count} \
+        ${slurm_cmd_mailing_flags} ${PROJECT_DIR}/sbatch.sh $arg_bond_energy $arg_iterations $arg_splits $arg_blocks $arg_length
 }
 
-mass_submit_job() {
-    ENERGY=(0.5 0.55)
-    for E in ${ENERGY[*]}; do
-        export BOND_ENERGY=$E
-        submit_job $NODE_COUNT $CORE_COUNT_PER_NODE $BOND_ENERGY
+mass_submit_slurm_job() {
+    energy_range=(0.5 0.55)
+    for e in ${energy_range[*]}; do
+        arg_bond_energy=$e
+        submit_slurm_job
     done
 }
 
+# parse script parameters
 while [ ! $# -eq 0 ]; do
     case "$1" in
     --help)
@@ -75,12 +97,16 @@ while [ ! $# -eq 0 ]; do
         job_mailing_type=$2
         shift
         ;;
+    --nodes | -n)
+        export NODE_COUNT=$2
+        shift
+        ;;
     --cores-per-node | -c)
         export CORE_COUNT_PER_NODE=$2
         shift
         ;;
-    --nodes | -n)
-        export NODE_COUNT=$2
+    --max-job-time)
+        max_job_time=$2
         shift
         ;;
     --single | -s)
@@ -91,7 +117,23 @@ while [ ! $# -eq 0 ]; do
         shift
         ;;
     --bond-energy)
-        export BOND_ENERGY=$2
+        arg_bond_energy=$2
+        shift
+        ;;
+    --iterations)
+        arg_iterations=$2
+        shift
+        ;;
+    --splits)
+        arg_splits=$2
+        shift
+        ;;
+    --blocks)
+        arg_blocks=$2
+        shift
+        ;;
+    --length)
+        arg_length=$2
         shift
         ;;
     *)
@@ -103,7 +145,7 @@ while [ ! $# -eq 0 ]; do
 done
 
 if [ $submit_single_job = true ]; then
-    submit_job $NODE_COUNT $CORE_COUNT_PER_NODE $duplicate_jobs_count $BOND_ENERGY
+    submit_slurm_job
 else
-    mass_submit_job
+    mass_submit_slurm_job
 fi
