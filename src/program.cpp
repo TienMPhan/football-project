@@ -3,6 +3,8 @@
 #include <random>
 #include <tuple>
 #include <chrono>
+#include "time_c.h"
+#include "memory_c.h"
 
 using namespace std;
 
@@ -37,8 +39,16 @@ void writeCoordinates(int **coord, double bondEn, int blocks, int length, int ru
 
 default_random_engine dre(chrono::steady_clock::now().time_since_epoch().count());
 
-int main(int argc, char *argv[])
-{
+int main(int argc, char* argv[]) {
+
+#ifdef DEBUG
+    double elapsedTime;
+	struct timeval t1, t2;
+	processMem_t mem;
+
+    gettimeofday(&t1, NULL);
+#endif
+
     if (argc != 13)
     {
         printf("err: check input parameters!\n");
@@ -92,6 +102,15 @@ int main(int argc, char *argv[])
 
     deallocate2dMatrix(coord, blocks);
     deallocate3dMatrix(lattice, Xm, Ym);
+
+#ifdef DEBUG
+        gettimeofday(&t2, NULL);
+		elapsedTime = getTimeDifferenceInMilliseconds(&t1, &t2);
+		getProcessMemory(&mem);
+
+        printf("\nEn-%f/C%.2fL%d-run%d-id-%d\n\tElapsed Time (ms): %f\n\tPhysical Memory (kB): %u\n\tVirtual Memory (kB): %u\n",
+            bondEn, bondEn, length, rep_write, runId, elapsedTime, mem.physicalMem, mem.virtualMem);
+#endif
 
     return 0;
 }
