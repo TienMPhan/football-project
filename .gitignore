@@ -3,3 +3,4 @@ code1protein/
 code1protein/CLionProjects/
 *.o
 out/*.out
+out/En-*/
