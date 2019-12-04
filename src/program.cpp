@@ -120,7 +120,8 @@ int main(int argc, char* argv[]) {
 		elapsedTime = getTimeDifferenceInMilliseconds(&t1, &t2);
 		getProcessMemory(&mem);
 
-        printf("\nDATA, %f, %u, %u\n", elapsedTime, mem.physicalMem, mem.virtualMem);
+        printf("\nEn-%f/C%.2fL%d-run%d-id-%d\n\tElapsed Time (ms): %f\n\tPhysical Memory (kB): %u\n\tVirtual Memory (kB): %u\n",
+            bondEn, bondEn, length, rep_write, runId, elapsedTime, mem.physicalMem, mem.virtualMem);
 #endif
 
     return 0;
