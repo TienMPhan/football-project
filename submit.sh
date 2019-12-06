@@ -9,7 +9,7 @@ default_node_count=1
 default_core_count_per_node=1
 default_max_job_time=00-12:00:00
 default_submit_single_job=false
-default_duplicate_jobs_count=1
+default_duplicate_jobs_count=10
 
 default_arg_bond_energy=0.5
 default_arg_iterations=10000000000
