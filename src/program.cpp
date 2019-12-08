@@ -8,7 +8,8 @@
 
 using namespace std;
 
-string outputDir;
+char *outputDir;
+int outputFileNameLength;
 int Xm, Ym, Zm;
 
 // lattice and coordinate array
@@ -59,7 +60,8 @@ int main(int argc, char *argv[])
     }
 
     // environment setup
-    outputDir = string(getenv("JOB_OUTPUT_DIR"));
+    outputDir = getenv("JOB_OUTPUT_DIR");
+    outputFileNameLength = strlen(outputDir) + 128;
     int rep_write = atoi(getenv("WRITE_ID"));
     int dimension = atoi(getenv("DIMENSIONS"));
     Xm = atoi(getenv("XM"));
@@ -68,8 +70,7 @@ int main(int argc, char *argv[])
 
     // parse input params
     tuple<string, string, string, string, string, string> parsedParamsTuple = parseParams(argc, argv);
-    string bondEnStr = get<0>(parsedParamsTuple);
-    double bondEn = stof(bondEnStr);
+    double bondEn = stof(get<0>(parsedParamsTuple));
     int blocks = stoi(get<1>(parsedParamsTuple));
     int length = stoi(get<2>(parsedParamsTuple));
     unsigned long iterations = stoul(get<3>(parsedParamsTuple));
@@ -125,9 +126,10 @@ int main(int argc, char *argv[])
 
 void writeLattice(int ***lattice, double bondEn, int length, int runId, unsigned long count, unsigned long split, int rep)
 {
+    char latticeFileName[outputFileNameLength];
+    snprintf(latticeFileName, outputFileNameLength, "%s/L%.2fL%d-run%d-id-%d-split-%d.txt", outputDir, bondEn, length, rep, runId, (count / split));
+    FILE *f = fopen(latticeFileName, "w");
     int **latticeX, *latticeY;
-    string latticeFileName(outputDir + "/L" + to_string(bondEn) + "L" + to_string(length) + "-run" + to_string(rep) + "-id-" + to_string(runId) + "-split-" + to_string(count / split) + ".txt");
-    FILE *f = fopen(latticeFileName.c_str(), "w");
     for (int x = 0; x < Xm; x++)
     {
         latticeX = lattice[x];
@@ -146,9 +148,10 @@ void writeLattice(int ***lattice, double bondEn, int length, int runId, unsigned
 }
 void writeCoordinates(int **coord, double bondEn, int blocks, int length, int runId, unsigned long count, unsigned long split, int rep)
 {
+    char coordinateFileName[outputFileNameLength];
+    snprintf(coordinateFileName, outputFileNameLength, "%s/C%.2fL%d-run%d-id-%d-split-%d.txt", outputDir, bondEn, length, rep, runId, (count / split));
+    FILE *f = fopen(coordinateFileName, "w");
     int *tempCoord;
-    string coordinateFileName(outputDir + "/C" + to_string(bondEn) + "L" + to_string(length) + "-run" + to_string(rep) + "-id-" + to_string(runId) + "-split-" + to_string(count / split) + ".txt");
-    FILE *f = fopen(coordinateFileName.c_str(), "w");
     for (int i = 0; i < blocks; i++)
     {
         tempCoord = coord[i];
@@ -158,11 +161,12 @@ void writeCoordinates(int **coord, double bondEn, int blocks, int length, int ru
 }
 void writexyz(int ***lattice, double bondEn, int blocks, int length, int runId, unsigned long count, unsigned long split, int rep)
 {
+    char xyzFileName[outputFileNameLength];
+    snprintf(xyzFileName, outputFileNameLength, "%s/VMD%.2fL%d-run%d-id-%d-split-%d.xyz", outputDir, bondEn, length, rep, runId, (count / split));
+    FILE *f = fopen(xyzFileName, "w");
+    fprintf(f, "%d\n\n", blocks * length);
     float floatX, floatY;
     int **latticeX, *latticeY;
-    string xyzFileName(outputDir + "/VMD" + to_string(bondEn) + "L" + to_string(length) + "-run" + to_string(rep) + "-id-" + to_string(runId) + "-split-" + to_string(count / split) + ".xyz");
-    FILE *f = fopen(xyzFileName.c_str(), "w");
-    fprintf(f, "%d\n\n", blocks * length);
     for (int x = 0; x < Xm; x++)
     {
         latticeX = lattice[x];
