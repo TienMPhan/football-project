@@ -126,9 +126,7 @@ int main(int argc, char *argv[])
 
 void writeLattice(int ***lattice, double bondEn, int length, int runId, unsigned long count, unsigned long split, int rep)
 {
-    char latticeFileName[outputFileNameLength];
-    snprintf(latticeFileName, outputFileNameLength, "%s/L%.2fL%d-run%d-id-%d-split-%d.txt", outputDir, bondEn, length, rep, runId, (count / split));
-    FILE *f = fopen(latticeFileName, "w");
+    char *printBuffer = new char[Xm * Ym * Zm * 14], *bufferPtr = printBuffer;
     int **latticeX, *latticeY;
     for (int x = 0; x < Xm; x++)
     {
@@ -138,33 +136,39 @@ void writeLattice(int ***lattice, double bondEn, int length, int runId, unsigned
             latticeY = latticeX[y];
             for (int z = 0; z < Zm; z++)
             {
-                fprintf(f, "%d ", latticeY[z]);
+                bufferPtr += snprintf(bufferPtr, 10, "%d ", latticeY[z]);
             }
-            fprintf(f, "\n");
+            bufferPtr += snprintf(bufferPtr, 2, "%s", "\n");
         }
-        fprintf(f, "\n");
+        bufferPtr += snprintf(bufferPtr, 2, "%s", "\n");
     }
+    char latticeFileName[outputFileNameLength];
+    snprintf(latticeFileName, outputFileNameLength, "%s/L%.2fL%d-run%d-id-%d-split-%d.txt", outputDir, bondEn, length, rep, runId, (count / split));
+    FILE *f = fopen(latticeFileName, "w");
+    fprintf(f, printBuffer);
     fclose(f);
+    delete[](printBuffer);
 }
 void writeCoordinates(int **coord, double bondEn, int blocks, int length, int runId, unsigned long count, unsigned long split, int rep)
 {
-    char coordinateFileName[outputFileNameLength];
-    snprintf(coordinateFileName, outputFileNameLength, "%s/C%.2fL%d-run%d-id-%d-split-%d.txt", outputDir, bondEn, length, rep, runId, (count / split));
-    FILE *f = fopen(coordinateFileName, "w");
+    char *printBuffer = new char[blocks * 83], *bufferPtr = printBuffer;
     int *tempCoord;
     for (int i = 0; i < blocks; i++)
     {
         tempCoord = coord[i];
-        fprintf(f, "%d %d %d %d\n", tempCoord[0], tempCoord[1], tempCoord[2], tempCoord[3]);
+        bufferPtr += snprintf(bufferPtr, 83, "%d %d %d %d\n", tempCoord[0], tempCoord[1], tempCoord[2], tempCoord[3]);
     }
+    char coordinateFileName[outputFileNameLength];
+    snprintf(coordinateFileName, outputFileNameLength, "%s/C%.2fL%d-run%d-id-%d-split-%d.txt", outputDir, bondEn, length, rep, runId, (count / split));
+    FILE *f = fopen(coordinateFileName, "w");
+    fprintf(f, printBuffer);
     fclose(f);
+    delete[](printBuffer);
 }
 void writexyz(int ***lattice, double bondEn, int blocks, int length, int runId, unsigned long count, unsigned long split, int rep)
 {
-    char xyzFileName[outputFileNameLength];
-    snprintf(xyzFileName, outputFileNameLength, "%s/VMD%.2fL%d-run%d-id-%d-split-%d.xyz", outputDir, bondEn, length, rep, runId, (count / split));
-    FILE *f = fopen(xyzFileName, "w");
-    fprintf(f, "%d\n\n", blocks * length);
+    char *printBuffer = new char[12 + (Xm * Ym * Zm * 35)], *bufferPtr = printBuffer;
+    bufferPtr += snprintf(bufferPtr, 12, "%d\n\n", blocks * length);
     float floatX, floatY;
     int **latticeX, *latticeY;
     for (int x = 0; x < Xm; x++)
@@ -179,12 +183,17 @@ void writexyz(int ***lattice, double bondEn, int blocks, int length, int runId, 
             {
                 if (latticeY[z])
                 {
-                    fprintf(f, "C %.4f %.4f %.4f\n", z * 0.2, floatY, floatX);
+                    bufferPtr += snprintf(bufferPtr, 35, "C %.4f %.4f %.4f\n", z * 0.2, floatY, floatX);
                 }
             }
         }
     }
+    char xyzFileName[outputFileNameLength];
+    snprintf(xyzFileName, outputFileNameLength, "%s/VMD%.2fL%d-run%d-id-%d-split-%d.xyz", outputDir, bondEn, length, rep, runId, (count / split));
+    FILE *f = fopen(xyzFileName, "w");
+    fprintf(f, printBuffer);
     fclose(f);
+    delete[](printBuffer);
 }
 int **allocate2dMatrix(int blocks, int dimension)
 {
@@ -313,7 +322,7 @@ void initialize(int ***array, int **cord, int blocks, int length)
         int z = randInt(0, Zm - 1);
 
 #ifdef DEBUG
-        printf("block: %d, x: %d, y: %d, z: %d\n", i + 1, x, y, z);
+        // printf("block: %d, x: %d, y: %d, z: %d\n", i + 1, x, y, z);
 #endif
 
         if (checkSpace(array, x, y, z, length))
@@ -330,7 +339,7 @@ void initialize(int ***array, int **cord, int blocks, int length)
                 int zp = randInt(0, Zm - 1);
 
 #ifdef DEBUG
-                printf("block (else): %d, x: %d, y: %d, z: %d\n", i + 1, xp, yp, zp);
+                // printf("block (else): %d, x: %d, y: %d, z: %d\n", i + 1, xp, yp, zp);
 #endif
 
                 if (checkSpace(array, xp, yp, zp, length))
