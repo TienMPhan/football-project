@@ -8,7 +8,7 @@ NODE_COUNT?=1
 CORE_COUNT_PER_NODE?=1
 
 BOND_ENERGY?=0.5
-DUPLICATE_JOBS?=3
+DUPLICATE_JOBS?=1
 
 make:
 	module load icc && \
@@ -22,4 +22,3 @@ mass_submit: make
 
 clean:
 	-rm $(PROJECT_DIR)/src/program.o
-	-rm $(PROJECT_DIR)/out/*.out
