@@ -3,259 +3,103 @@
 #include <chrono>
 #include <string>
 #include <tuple>
+#include "math_c.h"
 #include "time_c.h"
 #include "memory_c.h"
+#include "omp.h"
 
 using namespace std;
 
 char *outputDir;
 int outputFileNameLength;
-int Xm, Ym, Zm;
+int Xm, Ym, Zm, blocks;
+int nnodes, nthreads;
+int XmChunkSize, blocksChunkSize;
+int *latticeThreadStart, *latticeThreadEnd,
+    *coordinatesThreadStart, *coordinatesThreadEnd;
+int latticeBufferSize, latticeChunkBufferSize,
+    xyzBufferSize, xyzChunkBufferSize,
+    coordinatesBufferSize, coordinatesChunkBufferSize;
 
 // lattice and coordinate array
-int **allocate2dMatrix(int blocks, int dimension);
-void deallocate2dMatrix(int **coord, int blocks);
-int ***allocate3dMatrix(int dimX, int dimY, int dimZ);
-void deallocate3dMatrix(int ***matrix, int dimX, int dimY);
-
-// random number
-int randInt(int lower, int upper);
-double randDouble();
-
-// Metropolis algorithm functions
-int pos(int val, int max);
-bool checkSpace(int ***arr, int x, int y, int z, int length);
-void placeBlock(int ***arr, int x, int y, int z, int length, int currentBlock);
-void placeCord(int **cord, int x, int y, int z, int currentBlock);
-void initialize(int ***array, int **cord, int blocks, int length);
-bool energyCheck(int ***array, int **cord, double bondEn, int length, int bid, int xRand, int yRand, int zRand);
-bool moveCheck(int ***array, int **cord, int length, int bid, int xRand, int yRand, int zRand);
-void updatePos(int ***array, int **cord, int length, int bid, int xRand, int yRand, int zRand);
-
-// parse params
-tuple<string, string, string, string, string, string> parseParams(int argc, char *argv[]);
-
-// write data
-void writexyz(int ***lattice, double bondEn, int blocks, int length, int runId, unsigned long count, unsigned long split, int rep);
-void writeLattice(int ***lattice, double bondEn, int length, int runId, unsigned long count, unsigned long split, int rep);
-void writeCoordinates(int **coord, double bondEn, int blocks, int length, int runId, unsigned long count, unsigned long split, int rep);
-
-// seeding random generator
-default_random_engine dre(chrono::steady_clock::now().time_since_epoch().count());
-
-int main(int argc, char *argv[])
+int **allocate2dMatrix(int dimension)
 {
-
-#ifdef DEBUG
-    double elapsedTime;
-    struct timeval t1, t2;
-    processMem_t mem;
-
-    gettimeofday(&t1, NULL);
-#endif
-
-    if (argc != 13)
+    int **matrix = new int *[blocks];
+#pragma omp parallel
     {
-        printf("err: check input parameters!\n");
-    }
-
-    // environment setup
-    outputDir = getenv("JOB_OUTPUT_DIR");
-    outputFileNameLength = strlen(outputDir) + 128;
-    int rep_write = atoi(getenv("WRITE_ID"));
-    int dimension = atoi(getenv("DIMENSIONS"));
-    Xm = atoi(getenv("XM"));
-    Ym = atoi(getenv("YM"));
-    Zm = atoi(getenv("ZM"));
-
-    // parse input params
-    tuple<string, string, string, string, string, string> parsedParamsTuple = parseParams(argc, argv);
-    double bondEn = stof(get<0>(parsedParamsTuple));
-    int blocks = stoi(get<1>(parsedParamsTuple));
-    int length = stoi(get<2>(parsedParamsTuple));
-    unsigned long iterations = stoul(get<3>(parsedParamsTuple));
-    unsigned long split = stoul(get<4>(parsedParamsTuple));
-    int runId = stoi(get<5>(parsedParamsTuple));
-
-    // allocate memory and initialize lattice with 0
-    int ***lattice = allocate3dMatrix(Xm, Ym, Zm);
-
-    // allocate memmory and initialize coord with 0
-    int **coord = allocate2dMatrix(blocks, dimension);
-
-    // create initial state
-    initialize(lattice, coord, blocks, length);
-    unsigned long count = 1;
-    int moveDistance = 1;
-    while (count <= iterations)
-    {
-        int bid = randInt(1, blocks);
-        int xRand = randInt(-moveDistance, moveDistance);
-        int yRand = randInt(-moveDistance, moveDistance);
-        int zRand = randInt(-moveDistance, moveDistance);
-        if (moveCheck(lattice, coord, length, bid, xRand, yRand, zRand))
+        int threadId = omp_get_thread_num(), start = coordinatesThreadStart[threadId], end = coordinatesThreadEnd[threadId];
+        int *tempMatrix;
+        for (int i = start; i < end; i++)
         {
-            if (energyCheck(lattice, coord, bondEn, length, bid, xRand, yRand, zRand))
+            tempMatrix = new int[dimension];
+            for (int j = 0; j < dimension; j++)
             {
-                updatePos(lattice, coord, length, bid, xRand, yRand, zRand);
-                if (count % split == 0)
-                {
-                    writexyz(lattice, bondEn, blocks, length, runId, count, split, rep_write);
-                    writeLattice(lattice, bondEn, length, runId, count, split, rep_write);
-                    writeCoordinates(coord, bondEn, blocks, length, runId, count, split, rep_write);
-                }
-                count++;
+                tempMatrix[j] = 0;
             }
+            matrix[i] = tempMatrix;
         }
-    }
-
-    deallocate2dMatrix(coord, blocks);
-    deallocate3dMatrix(lattice, Xm, Ym);
-
-#ifdef DEBUG
-    gettimeofday(&t2, NULL);
-    elapsedTime = getTimeDifferenceInMilliseconds(&t1, &t2);
-    getProcessMemory(&mem);
-
-    printf("\nEn-%f/C%.2fL%d-run%d-id-%d\n\tElapsed Time (ms): %f\n\tPhysical Memory (kB): %u\n\tVirtual Memory (kB): %u\n",
-           bondEn, bondEn, length, rep_write, runId, elapsedTime, mem.physicalMem, mem.virtualMem);
-#endif
-
-    return 0;
-}
-
-void writeLattice(int ***lattice, double bondEn, int length, int runId, unsigned long count, unsigned long split, int rep)
-{
-    char *printBuffer = new char[Xm * Ym * Zm * 14], *bufferPtr = printBuffer;
-    int **latticeX, *latticeY;
-    for (int x = 0; x < Xm; x++)
-    {
-        latticeX = lattice[x];
-        for (int y = 0; y < Ym; y++)
-        {
-            latticeY = latticeX[y];
-            for (int z = 0; z < Zm; z++)
-            {
-                bufferPtr += snprintf(bufferPtr, 10, "%d ", latticeY[z]);
-            }
-            bufferPtr += snprintf(bufferPtr, 2, "%s", "\n");
-        }
-        bufferPtr += snprintf(bufferPtr, 2, "%s", "\n");
-    }
-    char latticeFileName[outputFileNameLength];
-    snprintf(latticeFileName, outputFileNameLength, "%s/L%.2fL%d-run%d-id-%d-split-%d.txt", outputDir, bondEn, length, rep, runId, (count / split));
-    FILE *f = fopen(latticeFileName, "w");
-    fprintf(f, printBuffer);
-    fclose(f);
-    delete[](printBuffer);
-}
-void writeCoordinates(int **coord, double bondEn, int blocks, int length, int runId, unsigned long count, unsigned long split, int rep)
-{
-    char *printBuffer = new char[blocks * 83], *bufferPtr = printBuffer;
-    int *tempCoord;
-    for (int i = 0; i < blocks; i++)
-    {
-        tempCoord = coord[i];
-        bufferPtr += snprintf(bufferPtr, 83, "%d %d %d %d\n", tempCoord[0], tempCoord[1], tempCoord[2], tempCoord[3]);
-    }
-    char coordinateFileName[outputFileNameLength];
-    snprintf(coordinateFileName, outputFileNameLength, "%s/C%.2fL%d-run%d-id-%d-split-%d.txt", outputDir, bondEn, length, rep, runId, (count / split));
-    FILE *f = fopen(coordinateFileName, "w");
-    fprintf(f, printBuffer);
-    fclose(f);
-    delete[](printBuffer);
-}
-void writexyz(int ***lattice, double bondEn, int blocks, int length, int runId, unsigned long count, unsigned long split, int rep)
-{
-    char *printBuffer = new char[12 + (Xm * Ym * Zm * 35)], *bufferPtr = printBuffer;
-    bufferPtr += snprintf(bufferPtr, 12, "%d\n\n", blocks * length);
-    float floatX, floatY;
-    int **latticeX, *latticeY;
-    for (int x = 0; x < Xm; x++)
-    {
-        latticeX = lattice[x];
-        floatX = x * 0.2;
-        for (int y = 0; y < Ym; y++)
-        {
-            latticeY = latticeX[y];
-            floatY = y * 0.2;
-            for (int z = 0; z < Zm; z++)
-            {
-                if (latticeY[z])
-                {
-                    bufferPtr += snprintf(bufferPtr, 35, "C %.4f %.4f %.4f\n", z * 0.2, floatY, floatX);
-                }
-            }
-        }
-    }
-    char xyzFileName[outputFileNameLength];
-    snprintf(xyzFileName, outputFileNameLength, "%s/VMD%.2fL%d-run%d-id-%d-split-%d.xyz", outputDir, bondEn, length, rep, runId, (count / split));
-    FILE *f = fopen(xyzFileName, "w");
-    fprintf(f, printBuffer);
-    fclose(f);
-    delete[](printBuffer);
-}
-int **allocate2dMatrix(int blocks, int dimension)
-{
-    int **matrix, *tempMatrix;
-    matrix = new int *[blocks];
-    for (int i = 0; i < blocks; i++)
-    {
-        tempMatrix = new int[dimension];
-        for (int j = 0; j < dimension; j++)
-        {
-            tempMatrix[j] = 0;
-        }
-        matrix[i] = tempMatrix;
     }
     return matrix;
 }
-
-void deallocate2dMatrix(int **coord, int blocks)
+int ***allocate3dMatrix()
 {
-    for (int i = 0; i < blocks; i++)
+    int ***matrix = new int **[Xm];
+#pragma omp parallel
     {
-        delete[](coord[i]);
+        int threadId = omp_get_thread_num(), start = latticeThreadStart[threadId], end = latticeThreadEnd[threadId];
+        int **matrixX, *matrixY;
+        for (int x = start; x < end; x++)
+        {
+            matrixX = new int *[Ym];
+            for (int y = 0; y < Ym; y++)
+            {
+                matrixY = new int[Zm];
+                for (int z = 0; z < Zm; z++)
+                {
+                    matrixY[z] = 0;
+                }
+                matrixX[y] = matrixY;
+            }
+            matrix[x] = matrixX;
+        }
+    }
+    return matrix;
+}
+void deallocate2dMatrix(int **coord)
+{
+#pragma omp parallel
+    {
+        int threadId = omp_get_thread_num(), start = coordinatesThreadStart[threadId], end = coordinatesThreadEnd[threadId];
+        for (int i = start; i < end; i++)
+        {
+            delete[](coord[i]);
+        }
     }
     delete[](coord);
 }
-
-int ***allocate3dMatrix(int dimX, int dimY, int dimZ)
+void deallocate3dMatrix(int ***matrix)
 {
-    int ***matrix, **matrixX, *matrixY;
-    matrix = new int **[dimX];
-    for (int x = 0; x < dimX; x++)
+#pragma omp parallel
     {
-        matrixX = new int *[dimY];
-        for (int y = 0; y < dimY; y++)
+        int threadId = omp_get_thread_num(), start = latticeThreadStart[threadId], end = latticeThreadEnd[threadId];
+        int **matrixX;
+        for (int x = start; x < end; x++)
         {
-            matrixY = new int[dimZ];
-            for (int z = 0; z < dimZ; z++)
+            matrixX = matrix[x];
+            for (int y = 0; y < Ym; y++)
             {
-                matrixY[z] = 0;
+                delete[](matrixX[y]);
             }
-            matrixX[y] = matrixY;
+            delete[](matrixX);
         }
-        matrix[x] = matrixX;
-    }
-    return matrix;
-}
-
-void deallocate3dMatrix(int ***matrix, int dimX, int dimY)
-{
-    int **matrixX;
-    for (int x = 0; x < dimX; x++)
-    {
-        matrixX = matrix[x];
-        for (int y = 0; y < dimY; y++)
-        {
-            delete[](matrixX[y]);
-        }
-        delete[](matrixX);
     }
     delete[](matrix);
 }
 
+// seeding random generator
+default_random_engine dre(chrono::steady_clock::now().time_since_epoch().count());
+
+// random number
 int randInt(int lower, int upper)
 {
     uniform_int_distribution<int> distribution(lower, upper);
@@ -269,6 +113,7 @@ double randDouble()
     return r;
 }
 
+// Metropolis algorithm functions
 int pos(int val, int max)
 {
     if (val >= max)
@@ -281,7 +126,6 @@ int pos(int val, int max)
     }
     return val;
 }
-
 bool checkSpace(int ***arr, int x, int y, int z, int length)
 {
     int **arrX = arr[x];
@@ -294,7 +138,6 @@ bool checkSpace(int ***arr, int x, int y, int z, int length)
     }
     return true;
 }
-
 void placeBlock(int ***arr, int x, int y, int z, int length, int currentBlock)
 {
     int **arrX = arr[x];
@@ -303,7 +146,6 @@ void placeBlock(int ***arr, int x, int y, int z, int length, int currentBlock)
         arrX[pos(y + i, Ym)][z] = currentBlock;
     }
 }
-
 void placeCord(int **cord, int x, int y, int z, int currentBlock)
 {
     int *tempCord = cord[currentBlock];
@@ -312,18 +154,13 @@ void placeCord(int **cord, int x, int y, int z, int currentBlock)
     tempCord[2] = y;
     tempCord[3] = z;
 }
-
-void initialize(int ***array, int **cord, int blocks, int length)
+void initialize(int ***array, int **cord, int length)
 {
     for (int i = 0; i < blocks; i++)
     {
         int x = randInt(0, Xm - 1);
         int y = randInt(0, Ym - 1);
         int z = randInt(0, Zm - 1);
-
-#ifdef DEBUG
-        // printf("block: %d, x: %d, y: %d, z: %d\n", i + 1, x, y, z);
-#endif
 
         if (checkSpace(array, x, y, z, length))
         {
@@ -338,10 +175,6 @@ void initialize(int ***array, int **cord, int blocks, int length)
                 int yp = randInt(0, Ym - 1);
                 int zp = randInt(0, Zm - 1);
 
-#ifdef DEBUG
-                // printf("block (else): %d, x: %d, y: %d, z: %d\n", i + 1, xp, yp, zp);
-#endif
-
                 if (checkSpace(array, xp, yp, zp, length))
                 {
                     placeCord(cord, xp, yp, zp, i);
@@ -352,27 +185,6 @@ void initialize(int ***array, int **cord, int blocks, int length)
         }
     }
 }
-
-bool moveCheck(int ***array, int **cord, int length, int bid, int xRand, int yRand, int zRand)
-{
-    int *tempCord = cord[bid - 1];
-    int xVal = tempCord[1];
-    int yVal = tempCord[2];
-    int zVal = tempCord[3];
-    int arrVal,
-        **tempArrXPosAddRand = array[pos(xVal + xRand, Xm)];
-    int posZAddRand = pos(zVal + zRand, Zm);
-    for (int i = 0; i < length; i++)
-    {
-        arrVal = tempArrXPosAddRand[pos(yVal + yRand + i, Ym)][posZAddRand];
-        if (arrVal != 0 && arrVal != bid)
-        {
-            return false;
-        }
-    }
-    return true;
-}
-
 bool energyCheck(int ***array, int **cord, double bondEn, int length, int bid, int xRand, int yRand, int zRand)
 {
     int energy1 = 0;
@@ -431,6 +243,25 @@ bool energyCheck(int ***array, int **cord, double bondEn, int length, int bid, i
     double r = randDouble();
     return r < exp(bondEn * (energy2 - energy1));
 }
+bool moveCheck(int ***array, int **cord, int length, int bid, int xRand, int yRand, int zRand)
+{
+    int *tempCord = cord[bid - 1];
+    int xVal = tempCord[1];
+    int yVal = tempCord[2];
+    int zVal = tempCord[3];
+    int arrVal,
+        **tempArrXPosAddRand = array[pos(xVal + xRand, Xm)];
+    int posZAddRand = pos(zVal + zRand, Zm);
+    for (int i = 0; i < length; i++)
+    {
+        arrVal = tempArrXPosAddRand[pos(yVal + yRand + i, Ym)][posZAddRand];
+        if (arrVal != 0 && arrVal != bid)
+        {
+            return false;
+        }
+    }
+    return true;
+}
 void updatePos(int ***array, int **cord, int length, int bid, int xRand, int yRand, int zRand)
 {
     int *tempCord = cord[bid - 1];
@@ -453,9 +284,11 @@ void updatePos(int ***array, int **cord, int length, int bid, int xRand, int yRa
     }
 }
 
-tuple<string, string, string, string, string, string> parseParams(int argc, char *argv[])
+// parse params
+tuple<string, string, string, string, string, string, string, string, string, string, string> parseParams(int argc, char *argv[])
 {
-    string bondEn, length, blocks, iterations, split, runId;
+    string bondEnStr, lengthStr, blocksStr, iterationsStr, splitStr, runIdStr,
+        XmStr, YmStr, ZmStr, dimensionsStr, writeIdStr;
     string temp;
     for (int i = 0; i < argc; i++)
     {
@@ -463,28 +296,248 @@ tuple<string, string, string, string, string, string> parseParams(int argc, char
 
         if (temp == "--bondEn")
         {
-            bondEn = string(argv[i + 1]);
+            bondEnStr = string(argv[i++ + 1]);
         }
         else if (temp == "--length")
         {
-            length = string(argv[i + 1]);
+            lengthStr = string(argv[i++ + 1]);
         }
         else if (temp == "--blocks")
         {
-            blocks = string(argv[i + 1]);
+            blocksStr = string(argv[i++ + 1]);
         }
         else if (temp == "--iterations")
         {
-            iterations = string(argv[i + 1]);
+            iterationsStr = string(argv[i++ + 1]);
         }
         else if (temp == "--split")
         {
-            split = string(argv[i + 1]);
+            splitStr = string(argv[i++ + 1]);
         }
         else if (temp == "--runId")
         {
-            runId = string(argv[i + 1]);
+            runIdStr = string(argv[i++ + 1]);
+        }
+        else if (temp == "--Xm")
+        {
+            XmStr = string(argv[i++ + 1]);
+        }
+        else if (temp == "--Ym")
+        {
+            YmStr = string(argv[i++ + 1]);
+        }
+        else if (temp == "--Zm")
+        {
+            ZmStr = string(argv[i++ + 1]);
+        }
+        else if (temp == "--dimensions")
+        {
+            dimensionsStr = string(argv[i++ + 1]);
+        }
+        else if (temp == "--writeId")
+        {
+            writeIdStr = string(argv[i++ + 1]);
         }
     }
-    return make_tuple(bondEn, blocks, length, iterations, split, runId);
+    return make_tuple(bondEnStr, blocksStr, lengthStr, iterationsStr, splitStr, runIdStr, XmStr, YmStr, ZmStr, dimensionsStr, writeIdStr);
+}
+
+// write data
+void writeLattice(int ***lattice, double bondEn, int length, int runId, unsigned long count, unsigned long split, int rep)
+{
+    char *latticePrintBuffer = new char[latticeBufferSize], *latticeBufferPtr = latticePrintBuffer;
+    char *xyzPrintBuffer = new char[xyzBufferSize], *xyzBufferPtr = xyzPrintBuffer;
+    xyzBufferPtr += snprintf(xyzBufferPtr, 12, "%d\n\n", blocks * length);
+#pragma omp parallel for ordered schedule(static, 1)
+    for (int t = 0; t < nthreads; t++)
+    {
+        int threadId = omp_get_thread_num(), start = latticeThreadStart[threadId], end = latticeThreadEnd[threadId];
+        char *latticeThreadPrintBuffer = new char[latticeChunkBufferSize], *latticeThreadBufferPtr = latticeThreadPrintBuffer,
+             *xyzThreadPrintBuffer = new char[xyzChunkBufferSize], *xyzThreadBufferPtr = xyzThreadPrintBuffer;
+        int **latticeX, *latticeY, latticeZ;
+        float floatX, floatY;
+        for (int x = start; x < end; x++)
+        {
+            latticeX = lattice[x];
+            floatX = x * 0.2;
+            for (int y = 0; y < Ym; y++)
+            {
+                latticeY = latticeX[y];
+                floatY = y * 0.2;
+                for (int z = 0; z < Zm; z++)
+                {
+                    latticeZ = latticeY[z];
+                    latticeThreadBufferPtr += snprintf(latticeThreadBufferPtr, 10, "%d ", latticeZ);
+                    if (latticeZ)
+                    {
+                        xyzThreadBufferPtr += snprintf(xyzThreadBufferPtr, 35, "C %.4f %.4f %.4f\n", z * 0.2, floatY, floatX);
+                    }
+                }
+                latticeThreadBufferPtr += snprintf(latticeThreadBufferPtr, 2, "%s", "\n");
+            }
+            latticeThreadBufferPtr += snprintf(latticeThreadBufferPtr, 2, "%s", "\n");
+        }
+        int latticeTotalCharsPrinted = latticeThreadBufferPtr - latticeThreadPrintBuffer;
+        int xyzTotalCharsPrinted = xyzThreadBufferPtr - xyzThreadPrintBuffer;
+#pragma omp ordered
+        {
+            latticeBufferPtr += snprintf(latticeBufferPtr, latticeTotalCharsPrinted, "%s", latticeThreadPrintBuffer);
+            xyzBufferPtr += snprintf(xyzBufferPtr, xyzTotalCharsPrinted, "%s", xyzThreadPrintBuffer);
+        }
+        delete[](latticeThreadPrintBuffer);
+        delete[](xyzThreadPrintBuffer);
+    }
+    char fileName[outputFileNameLength];
+    unsigned long countDivSplit = count / split;
+    snprintf(fileName, outputFileNameLength, "%s/L%.2fL%d-run%d-id-%d-split-%d.txt", outputDir, bondEn, length, rep, runId, countDivSplit);
+    FILE *f = fopen(fileName, "w");
+    fprintf(f, latticePrintBuffer);
+    fclose(f);
+    snprintf(fileName, outputFileNameLength, "%s/VMD%.2fL%d-run%d-id-%d-split-%d.xyz", outputDir, bondEn, length, rep, runId, countDivSplit);
+    f = fopen(fileName, "w");
+    fprintf(f, xyzPrintBuffer);
+    fclose(f);
+    delete[](latticePrintBuffer);
+    delete[](xyzPrintBuffer);
+}
+void writeCoordinates(int **coord, double bondEn, int length, int runId, unsigned long count, unsigned long split, int rep)
+{
+    char *printBuffer = new char[coordinatesBufferSize], *bufferPtr = printBuffer;
+#pragma omp parallel for ordered schedule(static, 1)
+    for (int t = 0; t < nthreads; t++)
+    {
+        int threadId = omp_get_thread_num(), start = coordinatesThreadStart[threadId], end = coordinatesThreadEnd[threadId];
+        char *threadPrintBuffer = new char[coordinatesChunkBufferSize], *threadBufferPtr = threadPrintBuffer;
+        int *tempCoord;
+        for (int i = start; i < end; i++)
+        {
+            tempCoord = coord[i];
+            threadBufferPtr += snprintf(threadBufferPtr, 83, "%d %d %d %d\n", tempCoord[0], tempCoord[1], tempCoord[2], tempCoord[3]);
+        }
+        int totalCharsPrinted = threadBufferPtr - threadPrintBuffer;
+#pragma omp ordered
+        {
+            bufferPtr += snprintf(bufferPtr, totalCharsPrinted, "%s", threadPrintBuffer);
+        }
+        delete[](threadPrintBuffer);
+    }
+    char coordinateFileName[outputFileNameLength];
+    snprintf(coordinateFileName, outputFileNameLength, "%s/C%.2fL%d-run%d-id-%d-split-%d.txt", outputDir, bondEn, length, rep, runId, (count / split));
+    FILE *f = fopen(coordinateFileName, "w");
+    fprintf(f, printBuffer);
+    fclose(f);
+    delete[](printBuffer);
+}
+
+void main(int argc, char *argv[])
+{
+
+#ifdef DEBUG
+    double elapsedTime;
+    struct timeval t1, t2;
+    processMem_t mem;
+#endif
+
+    if (argc != 23)
+    {
+        printf("err: check input parameters!\n");
+        exit(1);
+    }
+
+    // environment setup (1/2)
+    outputDir = getenv("PROTEIN_JOB_OUTPUT_DIR");
+    outputFileNameLength = strlen(outputDir) + 128;
+    nnodes = atoi(getenv("PROTEIN_NODE_COUNT"));
+    nthreads = atoi(getenv("PROTEIN_CORE_COUNT_PER_NODE"));
+
+    // parse input params
+    tuple<string, string, string, string, string, string, string, string, string, string, string> parsedParamsTuple = parseParams(argc, argv);
+    double bondEn = stof(get<0>(parsedParamsTuple));
+    blocks = stoi(get<1>(parsedParamsTuple));
+    int length = stoi(get<2>(parsedParamsTuple));
+    unsigned long iterations = stoul(get<3>(parsedParamsTuple));
+    unsigned long split = stoul(get<4>(parsedParamsTuple));
+    int runId = stoi(get<5>(parsedParamsTuple));
+    Xm = stoi(get<6>(parsedParamsTuple));
+    Ym = stoi(get<7>(parsedParamsTuple));
+    Zm = stoi(get<8>(parsedParamsTuple));
+    int dimension = stoi(get<9>(parsedParamsTuple));
+    int rep_write = stoi(get<10>(parsedParamsTuple));
+
+    // environment setup (2/2)
+    omp_set_num_threads(nthreads);
+    XmChunkSize = (Xm / nthreads) + (Xm % nthreads);
+    blocksChunkSize = (blocks / nthreads) + (blocks % nthreads);
+
+    latticeBufferSize = Xm * Ym * Zm * 14;
+    latticeChunkBufferSize = XmChunkSize * Ym * Zm * 14;
+    xyzBufferSize = 12 + (Xm * Ym * Zm * 35);
+    xyzChunkBufferSize = XmChunkSize * Ym * Zm * 35;
+    coordinatesBufferSize = blocks * 83;
+    coordinatesChunkBufferSize = blocksChunkSize * 83;
+
+    latticeThreadStart = new int[nthreads];
+    latticeThreadEnd = new int[nthreads];
+    coordinatesThreadStart = new int[nthreads];
+    coordinatesThreadEnd = new int[nthreads];
+    for (int threadId = 0,
+             latticeThreadStartNum, coordinatesThreadStartNum;
+         threadId < nthreads; threadId++)
+    {
+        latticeThreadStartNum = threadId * XmChunkSize;
+        latticeThreadStart[threadId] = latticeThreadStartNum;
+        latticeThreadEnd[threadId] = min(latticeThreadStartNum + XmChunkSize, Xm);
+        coordinatesThreadStartNum = threadId * blocksChunkSize;
+        coordinatesThreadStart[threadId] = coordinatesThreadStartNum;
+        coordinatesThreadEnd[threadId] = min(coordinatesThreadStartNum + blocksChunkSize, blocks);
+    }
+
+#ifdef DEBUG
+    gettimeofday(&t1, NULL);
+#endif
+
+    // allocate memory and initialize lattice with 0
+    int ***lattice = allocate3dMatrix();
+
+    // allocate memmory and initialize coord with 0
+    int **coord = allocate2dMatrix(dimension);
+
+    // create initial state
+    initialize(lattice, coord, length);
+    for (unsigned long count = 1; count <= iterations; count++)
+    {
+        int bid = randInt(1, blocks);
+        int xRand = randInt(-1, 1);
+        int yRand = randInt(-1, 1);
+        int zRand = randInt(-1, 1);
+        if (moveCheck(lattice, coord, length, bid, xRand, yRand, zRand))
+        {
+            if (energyCheck(lattice, coord, bondEn, length, bid, xRand, yRand, zRand))
+            {
+                updatePos(lattice, coord, length, bid, xRand, yRand, zRand);
+                if (count % split == 0)
+                {
+                    writeLattice(lattice, bondEn, length, runId, count, split, rep_write);
+                    writeCoordinates(coord, bondEn, length, runId, count, split, rep_write);
+                }
+            }
+        }
+    }
+
+#ifdef DEBUG
+    gettimeofday(&t2, NULL);
+    elapsedTime = getTimeDifferenceInMilliseconds(&t1, &t2);
+    getProcessMemory(&mem);
+
+    printf("\nEn-%f/C%.2fL%d-run%d-id-%d\n\tNode Count: %d\n\tCore Count Per Node: %d\n\tElapsed Time (ms): %f\n\tPhysical Memory (kB): %u\n\tVirtual Memory (kB): %u\n",
+           bondEn, bondEn, length, rep_write, runId, nnodes, nthreads, elapsedTime, mem.physicalMem, mem.virtualMem);
+#endif
+
+    deallocate2dMatrix(coord);
+    deallocate3dMatrix(lattice);
+
+    delete[](latticeThreadStart);
+    delete[](latticeThreadEnd);
+    delete[](coordinatesThreadStart);
+    delete[](coordinatesThreadEnd);
 }

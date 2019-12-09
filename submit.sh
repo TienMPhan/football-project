@@ -1,6 +1,6 @@
 #!/bin/sh
-export PROJECT_DIR=$(dirname $(realpath $0)) # directory where this script (submit.sh) is located
-export OUTPUT_DIR=${PROJECT_DIR}/out         # directory for program output (files, stdout, etc)
+export PROTEIN_PROJECT_DIR=$(dirname $(realpath $0)) # directory where this script (submit.sh) is located
+export PROTEIN_OUTPUT_DIR=${PROTEIN_PROJECT_DIR}/out # directory for program output (files, stdout, etc)
 
 # default variable values
 default_job_mailing_email=$(whoami)@ksu.edu
@@ -25,8 +25,8 @@ default_zm=200
 # variable declarations
 job_mailing_email=$default_job_mailing_email
 job_mailing_type=$default_job_mailing_type
-export NODE_COUNT=$default_node_count
-export CORE_COUNT_PER_NODE=$default_core_count_per_node
+export PROTEIN_NODE_COUNT=$default_node_count
+export PROTEIN_CORE_COUNT_PER_NODE=$default_core_count_per_node
 max_job_time=$default_max_job_time
 submit_single_job=$default_submit_single_job
 duplicate_jobs_count=$default_duplicate_jobs_count
@@ -36,11 +36,11 @@ arg_iterations=$default_arg_iterations
 arg_splits=$default_arg_splits
 arg_blocks=$default_arg_blocks
 arg_length=$default_arg_length
-export WRITE_ID=$default_job_write_id
-export DIMENSIONS=$default_dimensions
-export XM=$default_xm
-export YM=$default_ym
-export ZM=$default_zm
+arg_write_id=$default_job_write_id
+arg_dimensions=$default_dimensions
+arg_Xm=$default_xm
+arg_Ym=$default_ym
+arg_Zm=$default_zm
 
 show_script_help() {
     echo "
@@ -62,16 +62,25 @@ show_script_help() {
 }
 
 submit_slurm_job() {
-    export JOB_OUTPUT_DIR=${OUTPUT_DIR}/En-${arg_bond_energy}
-    mkdir -p $JOB_OUTPUT_DIR
-    slurm_output_file=${JOB_OUTPUT_DIR}/slurm-%j_${arg_bond_energy}L${arg_length}-run${WRITE_ID}.out
+    export PROTEIN_JOB_OUTPUT_DIR=${PROTEIN_OUTPUT_DIR}/En-${arg_bond_energy}
+    mkdir -p $PROTEIN_JOB_OUTPUT_DIR
+    slurm_output_file=${PROTEIN_JOB_OUTPUT_DIR}/slurm-%j_${arg_bond_energy}L${arg_length}-run${arg_write_id}.out
     if [ ! -z "$job_mailing_email" ] && [ ! -z $job_mailing_type ]; then
         slurm_cmd_mailing_flags="--mail-user=${job_mailing_email} --mail-type=${job_mailing_type}"
     fi
-    memory=$((((($arg_blocks * $DIMENSIONS * 256) + ($XM * $YM * $ZM * 80) + ($arg_blocks * 83)) / 1000000) + 512))
+
+    arg_Xm_chunk_size=$((($arg_Xm / $PROTEIN_CORE_COUNT_PER_NODE) + ($arg_Xm % $PROTEIN_CORE_COUNT_PER_NODE)))
+    arg_blocks_chunk_size=$((($arg_blocks / $PROTEIN_CORE_COUNT_PER_NODE) + ($arg_blocks % $PROTEIN_CORE_COUNT_PER_NODE)))
+    memory_matrices=$((($arg_blocks * $arg_dimensions * 4) + ($arg_Xm * $arg_Ym * $arg_Zm * 4)))
+    memory_write_lattice=$(((($arg_Xm * $arg_Ym * $arg_Zm * 49) + ($arg_Xm_chunk_size * $arg_Ym * $arg_Zm * 49)) + 12))
+    memory_write_coords=$((($arg_blocks * 83) + ($arg_blocks * 83)))
+    max_write_buffer_size=$(($memory_write_lattice > $memory_write_coords ? $memory_write_lattice : $memory_write_coords))
+    memory=$(((($memory_matrices + $max_write_buffer_size) / 1000000) + 512)) # memory per core in megabytes (M or MB)
+
     sbatch --constraint=elves --output=${slurm_output_file} --error=${slurm_output_file} --job-name=nv1.1d1-E${arg_bond_energy}L5 \
-        --mem-per-cpu=${memory}M --time=${max_job_time} --nodes=${NODE_COUNT} --ntasks-per-node=${CORE_COUNT_PER_NODE} --array=1-${duplicate_jobs_count} \
-        ${slurm_cmd_mailing_flags} ${PROJECT_DIR}/sbatch.sh $arg_bond_energy $arg_iterations $arg_splits $arg_blocks $arg_length
+        --mem-per-cpu=${memory}M --time=${max_job_time} --nodes=${PROTEIN_NODE_COUNT} --ntasks-per-node=${PROTEIN_CORE_COUNT_PER_NODE} --array=1-${duplicate_jobs_count} \
+        ${slurm_cmd_mailing_flags} ${PROTEIN_PROJECT_DIR}/sbatch.sh $arg_bond_energy $arg_iterations $arg_splits $arg_blocks $arg_length $arg_Xm $arg_Ym $arg_Zm \
+        $arg_dimensions $arg_write_id
 }
 
 mass_submit_slurm_job() {
@@ -98,11 +107,11 @@ while [ ! $# -eq 0 ]; do
         shift
         ;;
     --nodes | -n)
-        export NODE_COUNT=$2
+        export PROTEIN_NODE_COUNT=$2
         shift
         ;;
     --cores-per-node | -c)
-        export CORE_COUNT_PER_NODE=$2
+        export PROTEIN_CORE_COUNT_PER_NODE=$2
         shift
         ;;
     --max-job-time)
