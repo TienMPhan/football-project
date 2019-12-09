@@ -13,7 +13,7 @@ using namespace std;
 char *outputDir;
 int outputFileNameLength;
 int Xm, Ym, Zm;
-int nthreads;
+int nnodes, nthreads;
 int XmChunkSize, blocksChunkSize;
 int *latticeThreadStart, *latticeThreadEnd,
     *coordinatesThreadStart, *coordinatesThreadEnd;
@@ -24,21 +24,15 @@ int latticeBufferSize, latticeChunkBufferSize,
 // lattice and coordinate array
 int **allocate2dMatrix(int blocks, int dimension)
 {
-    int **matrix, *tempMatrix;
-    matrix = new int *[blocks];
-#pragma omp parallel
+    int **matrix = new int *[blocks], *tempMatrix;
+    for (int i = 0; i < blocks; i++)
     {
-        int threadId = omp_get_thread_num(), start = coordinatesThreadStart[threadId], end = coordinatesThreadEnd[threadId];
-        // int **tempMatrix = new int[];
-        for (int i = 0; i < blocks; i++)
+        tempMatrix = new int[dimension];
+        for (int j = 0; j < dimension; j++)
         {
-            tempMatrix = new int[dimension];
-            for (int j = 0; j < dimension; j++)
-            {
-                tempMatrix[j] = 0;
-            }
-            matrix[i] = tempMatrix;
+            tempMatrix[j] = 0;
         }
+        matrix[i] = tempMatrix;
     }
     return matrix;
 }
@@ -274,9 +268,10 @@ void updatePos(int ***array, int **cord, int length, int bid, int xRand, int yRa
 }
 
 // parse params
-tuple<string, string, string, string, string, string> parseParams(int argc, char *argv[])
+tuple<string, string, string, string, string, string, string, string, string, string, string> parseParams(int argc, char *argv[])
 {
-    string bondEn, length, blocks, iterations, split, runId;
+    string bondEnStr, lengthStr, blocksStr, iterationsStr, splitStr, runIdStr,
+        XmStr, YmStr, ZmStr, dimensionsStr, writeIdStr;
     string temp;
     for (int i = 0; i < argc; i++)
     {
@@ -284,30 +279,50 @@ tuple<string, string, string, string, string, string> parseParams(int argc, char
 
         if (temp == "--bondEn")
         {
-            bondEn = string(argv[i + 1]);
+            bondEnStr = string(argv[i++ + 1]);
         }
         else if (temp == "--length")
         {
-            length = string(argv[i + 1]);
+            lengthStr = string(argv[i++ + 1]);
         }
         else if (temp == "--blocks")
         {
-            blocks = string(argv[i + 1]);
+            blocksStr = string(argv[i++ + 1]);
         }
         else if (temp == "--iterations")
         {
-            iterations = string(argv[i + 1]);
+            iterationsStr = string(argv[i++ + 1]);
         }
         else if (temp == "--split")
         {
-            split = string(argv[i + 1]);
+            splitStr = string(argv[i++ + 1]);
         }
         else if (temp == "--runId")
         {
-            runId = string(argv[i + 1]);
+            runIdStr = string(argv[i++ + 1]);
+        }
+        else if (temp == "--Xm")
+        {
+            XmStr = string(argv[i++ + 1]);
+        }
+        else if (temp == "--Ym")
+        {
+            YmStr = string(argv[i++ + 1]);
+        }
+        else if (temp == "--Zm")
+        {
+            ZmStr = string(argv[i++ + 1]);
+        }
+        else if (temp == "--dimensions")
+        {
+            dimensionsStr = string(argv[i++ + 1]);
+        }
+        else if (temp == "--writeId")
+        {
+            writeIdStr = string(argv[i++ + 1]);
         }
     }
-    return make_tuple(bondEn, blocks, length, iterations, split, runId);
+    return make_tuple(bondEnStr, blocksStr, lengthStr, iterationsStr, splitStr, runIdStr, XmStr, YmStr, ZmStr, dimensionsStr, writeIdStr);
 }
 
 // write data
@@ -397,40 +412,40 @@ void writeCoordinates(int **coord, double bondEn, int blocks, int length, int ru
     delete[](printBuffer);
 }
 
-int main(int argc, char *argv[])
+void main(int argc, char *argv[])
 {
 
 #ifdef DEBUG
     double elapsedTime;
     struct timeval t1, t2;
     processMem_t mem;
-
-    gettimeofday(&t1, NULL);
 #endif
 
-    if (argc != 13)
+    if (argc != 23)
     {
         printf("err: check input parameters!\n");
+        exit(1);
     }
 
     // environment setup (1/2)
-    outputDir = getenv("JOB_OUTPUT_DIR");
+    outputDir = getenv("PROTEIN_JOB_OUTPUT_DIR");
     outputFileNameLength = strlen(outputDir) + 128;
-    Xm = atoi(getenv("XM"));
-    Ym = atoi(getenv("YM"));
-    Zm = atoi(getenv("ZM"));
-    nthreads = atoi(getenv("CORE_COUNT_PER_NODE"));
-    int rep_write = atoi(getenv("WRITE_ID"));
-    int dimension = atoi(getenv("DIMENSIONS"));
+    nnodes = atoi(getenv("PROTEIN_NODE_COUNT"));
+    nthreads = atoi(getenv("PROTEIN_CORE_COUNT_PER_NODE"));
 
     // parse input params
-    tuple<string, string, string, string, string, string> parsedParamsTuple = parseParams(argc, argv);
+    tuple<string, string, string, string, string, string, string, string, string, string, string> parsedParamsTuple = parseParams(argc, argv);
     double bondEn = stof(get<0>(parsedParamsTuple));
     int blocks = stoi(get<1>(parsedParamsTuple));
     int length = stoi(get<2>(parsedParamsTuple));
     unsigned long iterations = stoul(get<3>(parsedParamsTuple));
     unsigned long split = stoul(get<4>(parsedParamsTuple));
     int runId = stoi(get<5>(parsedParamsTuple));
+    Xm = stoi(get<6>(parsedParamsTuple));
+    Ym = stoi(get<7>(parsedParamsTuple));
+    Zm = stoi(get<8>(parsedParamsTuple));
+    int dimension = stoi(get<9>(parsedParamsTuple));
+    int rep_write = stoi(get<10>(parsedParamsTuple));
 
     // environment setup (2/2)
     omp_set_num_threads(nthreads);
@@ -460,6 +475,10 @@ int main(int argc, char *argv[])
         coordinatesThreadEnd[threadId] = min(coordinatesThreadStartNum + blocksChunkSize, blocks);
     }
 
+#ifdef DEBUG
+    gettimeofday(&t1, NULL);
+#endif
+
     // allocate memory and initialize lattice with 0
     int ***lattice = allocate3dMatrix(Xm, Ym, Zm);
 
@@ -484,7 +503,6 @@ int main(int argc, char *argv[])
                     writeLattice(lattice, bondEn, blocks, length, runId, count, split, rep_write);
                     writeCoordinates(coord, bondEn, blocks, length, runId, count, split, rep_write);
                 }
-                count++;
             }
         }
     }
@@ -494,8 +512,8 @@ int main(int argc, char *argv[])
     elapsedTime = getTimeDifferenceInMilliseconds(&t1, &t2);
     getProcessMemory(&mem);
 
-    printf("\nEn-%f/C%.2fL%d-run%d-id-%d\n\tCore Count Per Node: %d\n\tElapsed Time (ms): %f\n\tPhysical Memory (kB): %u\n\tVirtual Memory (kB): %u\n",
-           nthreads, bondEn, bondEn, length, rep_write, runId, elapsedTime, mem.physicalMem, mem.virtualMem);
+    printf("\nEn-%f/C%.2fL%d-run%d-id-%d\n\tNode Count: %d\n\tCore Count Per Node: %d\n\tElapsed Time (ms): %f\n\tPhysical Memory (kB): %u\n\tVirtual Memory (kB): %u\n",
+           bondEn, bondEn, length, rep_write, runId, nnodes, nthreads, elapsedTime, mem.physicalMem, mem.virtualMem);
 #endif
 
     deallocate2dMatrix(coord, blocks);
@@ -505,6 +523,4 @@ int main(int argc, char *argv[])
     delete[](latticeThreadEnd);
     delete[](coordinatesThreadStart);
     delete[](coordinatesThreadEnd);
-
-    return 0;
 }
