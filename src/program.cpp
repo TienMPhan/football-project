@@ -41,23 +41,27 @@ int **allocate2dMatrix(int dimension)
     }
     return matrix;
 }
-int ***allocate3dMatrix(int dimX, int dimY, int dimZ)
+int ***allocate3dMatrix()
 {
-    int ***matrix, **matrixX, *matrixY;
-    matrix = new int **[dimX];
-    for (int x = 0; x < dimX; x++)
+    int ***matrix = new int **[Xm];
+#pragma omp parallel
     {
-        matrixX = new int *[dimY];
-        for (int y = 0; y < dimY; y++)
+        int threadId = omp_get_thread_num(), start = latticeThreadStart[threadId], end = latticeThreadEnd[threadId];
+        int **matrixX, *matrixY;
+        for (int x = start; x < end; x++)
         {
-            matrixY = new int[dimZ];
-            for (int z = 0; z < dimZ; z++)
+            matrixX = new int *[Ym];
+            for (int y = 0; y < Ym; y++)
             {
-                matrixY[z] = 0;
+                matrixY = new int[Zm];
+                for (int z = 0; z < Zm; z++)
+                {
+                    matrixY[z] = 0;
+                }
+                matrixX[y] = matrixY;
             }
-            matrixX[y] = matrixY;
+            matrix[x] = matrixX;
         }
-        matrix[x] = matrixX;
     }
     return matrix;
 }
@@ -73,17 +77,21 @@ void deallocate2dMatrix(int **coord)
     }
     delete[](coord);
 }
-void deallocate3dMatrix(int ***matrix, int dimX, int dimY)
+void deallocate3dMatrix(int ***matrix)
 {
-    int **matrixX;
-    for (int x = 0; x < dimX; x++)
+#pragma omp parallel
     {
-        matrixX = matrix[x];
-        for (int y = 0; y < dimY; y++)
+        int threadId = omp_get_thread_num(), start = latticeThreadStart[threadId], end = latticeThreadEnd[threadId];
+        int **matrixX;
+        for (int x = start; x < end; x++)
         {
-            delete[](matrixX[y]);
+            matrixX = matrix[x];
+            for (int y = 0; y < Ym; y++)
+            {
+                delete[](matrixX[y]);
+            }
+            delete[](matrixX);
         }
-        delete[](matrixX);
     }
     delete[](matrix);
 }
@@ -489,7 +497,7 @@ void main(int argc, char *argv[])
 #endif
 
     // allocate memory and initialize lattice with 0
-    int ***lattice = allocate3dMatrix(Xm, Ym, Zm);
+    int ***lattice = allocate3dMatrix();
 
     // allocate memmory and initialize coord with 0
     int **coord = allocate2dMatrix(dimension);
@@ -526,7 +534,7 @@ void main(int argc, char *argv[])
 #endif
 
     deallocate2dMatrix(coord);
-    deallocate3dMatrix(lattice, Xm, Ym);
+    deallocate3dMatrix(lattice);
 
     delete[](latticeThreadStart);
     delete[](latticeThreadEnd);
