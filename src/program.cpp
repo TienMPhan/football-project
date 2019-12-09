@@ -12,7 +12,7 @@ using namespace std;
 
 char *outputDir;
 int outputFileNameLength;
-int Xm, Ym, Zm;
+int Xm, Ym, Zm, blocks;
 int nnodes, nthreads;
 int XmChunkSize, blocksChunkSize;
 int *latticeThreadStart, *latticeThreadEnd,
@@ -22,17 +22,21 @@ int latticeBufferSize, latticeChunkBufferSize,
     coordinatesBufferSize, coordinatesChunkBufferSize;
 
 // lattice and coordinate array
-int **allocate2dMatrix(int blocks, int dimension)
+int **allocate2dMatrix(int dimension)
 {
     int **matrix = new int *[blocks], *tempMatrix;
-    for (int i = 0; i < blocks; i++)
+#pragma omp parallel
     {
-        tempMatrix = new int[dimension];
-        for (int j = 0; j < dimension; j++)
+        int threadId = omp_get_thread_num(), start = coordinatesThreadStart[threadId], end = coordinatesThreadEnd[threadId];
+        for (int i = start; i < end; i++)
         {
-            tempMatrix[j] = 0;
+            tempMatrix = new int[dimension];
+            for (int j = 0; j < dimension; j++)
+            {
+                tempMatrix[j] = 0;
+            }
+            matrix[i] = tempMatrix;
         }
-        matrix[i] = tempMatrix;
     }
     return matrix;
 }
@@ -56,11 +60,15 @@ int ***allocate3dMatrix(int dimX, int dimY, int dimZ)
     }
     return matrix;
 }
-void deallocate2dMatrix(int **coord, int blocks)
+void deallocate2dMatrix(int **coord)
 {
-    for (int i = 0; i < blocks; i++)
+#pragma omp parallel
     {
-        delete[](coord[i]);
+        int threadId = omp_get_thread_num(), start = coordinatesThreadStart[threadId], end = coordinatesThreadEnd[threadId];
+        for (int i = start; i < end; i++)
+        {
+            delete[](coord[i]);
+        }
     }
     delete[](coord);
 }
@@ -137,7 +145,7 @@ void placeCord(int **cord, int x, int y, int z, int currentBlock)
     tempCord[2] = y;
     tempCord[3] = z;
 }
-void initialize(int ***array, int **cord, int blocks, int length)
+void initialize(int ***array, int **cord, int length)
 {
     for (int i = 0; i < blocks; i++)
     {
@@ -326,7 +334,7 @@ tuple<string, string, string, string, string, string, string, string, string, st
 }
 
 // write data
-void writeLattice(int ***lattice, double bondEn, int blocks, int length, int runId, unsigned long count, unsigned long split, int rep)
+void writeLattice(int ***lattice, double bondEn, int length, int runId, unsigned long count, unsigned long split, int rep)
 {
     char *latticePrintBuffer = new char[latticeBufferSize], *latticeBufferPtr = latticePrintBuffer;
     char *xyzPrintBuffer = new char[xyzBufferSize], *xyzBufferPtr = xyzPrintBuffer;
@@ -383,7 +391,7 @@ void writeLattice(int ***lattice, double bondEn, int blocks, int length, int run
     delete[](latticePrintBuffer);
     delete[](xyzPrintBuffer);
 }
-void writeCoordinates(int **coord, double bondEn, int blocks, int length, int runId, unsigned long count, unsigned long split, int rep)
+void writeCoordinates(int **coord, double bondEn, int length, int runId, unsigned long count, unsigned long split, int rep)
 {
     char *printBuffer = new char[coordinatesBufferSize], *bufferPtr = printBuffer;
 #pragma omp parallel for ordered schedule(static, 1)
@@ -436,7 +444,7 @@ void main(int argc, char *argv[])
     // parse input params
     tuple<string, string, string, string, string, string, string, string, string, string, string> parsedParamsTuple = parseParams(argc, argv);
     double bondEn = stof(get<0>(parsedParamsTuple));
-    int blocks = stoi(get<1>(parsedParamsTuple));
+    blocks = stoi(get<1>(parsedParamsTuple));
     int length = stoi(get<2>(parsedParamsTuple));
     unsigned long iterations = stoul(get<3>(parsedParamsTuple));
     unsigned long split = stoul(get<4>(parsedParamsTuple));
@@ -483,10 +491,10 @@ void main(int argc, char *argv[])
     int ***lattice = allocate3dMatrix(Xm, Ym, Zm);
 
     // allocate memmory and initialize coord with 0
-    int **coord = allocate2dMatrix(blocks, dimension);
+    int **coord = allocate2dMatrix(dimension);
 
     // create initial state
-    initialize(lattice, coord, blocks, length);
+    initialize(lattice, coord, length);
     for (unsigned long count = 1; count <= iterations; count++)
     {
         int bid = randInt(1, blocks);
@@ -500,8 +508,8 @@ void main(int argc, char *argv[])
                 updatePos(lattice, coord, length, bid, xRand, yRand, zRand);
                 if (count % split == 0)
                 {
-                    writeLattice(lattice, bondEn, blocks, length, runId, count, split, rep_write);
-                    writeCoordinates(coord, bondEn, blocks, length, runId, count, split, rep_write);
+                    writeLattice(lattice, bondEn, length, runId, count, split, rep_write);
+                    writeCoordinates(coord, bondEn, length, runId, count, split, rep_write);
                 }
             }
         }
@@ -516,7 +524,7 @@ void main(int argc, char *argv[])
            bondEn, bondEn, length, rep_write, runId, nnodes, nthreads, elapsedTime, mem.physicalMem, mem.virtualMem);
 #endif
 
-    deallocate2dMatrix(coord, blocks);
+    deallocate2dMatrix(coord);
     deallocate3dMatrix(lattice, Xm, Ym);
 
     delete[](latticeThreadStart);
