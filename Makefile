@@ -9,7 +9,7 @@ CORE_COUNT_PER_NODE?=2
 
 make:
 	module load icc && \
-	$(CC) $(CCFLAGS) $(OPT_CCFLAGS) -D$(MODE) -o $(PROJECT_DIR)/src/program.o ${PROJECT_DIR}/src/program.cpp
+	$(CC) $(CCFLAGS) $(OPT_CCFLAGS) -D$(MODE) -o $(PROJECT_DIR)/program.o ${PROJECT_DIR}/src/program.cpp
 
 test: make
 	$(PROJECT_DIR)/submit.sh --nodes $(NODE_COUNT) --cores-per-node $(CORE_COUNT_PER_NODE) -s --duplicate-jobs 1 --bond-energy 0.8 \
@@ -22,4 +22,4 @@ mass_submit: make
 	$(PROJECT_DIR)/submit.sh --nodes $(NODE_COUNT) --cores-per-node $(CORE_COUNT_PER_NODE)
 
 clean:
-	-rm $(PROJECT_DIR)/src/program.o
+	-rm $(PROJECT_DIR)/program.o
