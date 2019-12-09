@@ -24,10 +24,11 @@ int latticeBufferSize, latticeChunkBufferSize,
 // lattice and coordinate array
 int **allocate2dMatrix(int dimension)
 {
-    int **matrix = new int *[blocks], *tempMatrix;
+    int **matrix = new int *[blocks];
 #pragma omp parallel
     {
         int threadId = omp_get_thread_num(), start = coordinatesThreadStart[threadId], end = coordinatesThreadEnd[threadId];
+        int *tempMatrix;
         for (int i = start; i < end; i++)
         {
             tempMatrix = new int[dimension];
