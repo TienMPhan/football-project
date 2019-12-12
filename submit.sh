@@ -69,16 +69,27 @@ submit_slurm_job() {
         slurm_cmd_mailing_flags="--mail-user=${job_mailing_email} --mail-type=${job_mailing_type}"
     fi
 
-    arg_Xm_chunk_size=$((($arg_Xm / $PROTEIN_CORE_COUNT_PER_NODE) + ($arg_Xm % $PROTEIN_CORE_COUNT_PER_NODE)))
-    arg_blocks_chunk_size=$((($arg_blocks / $PROTEIN_CORE_COUNT_PER_NODE) + ($arg_blocks % $PROTEIN_CORE_COUNT_PER_NODE)))
-    memory_matrices=$((($arg_blocks * $arg_dimensions * 4) + ($arg_Xm * $arg_Ym * $arg_Zm * 4)))
-    memory_write_lattice=$(((($arg_Xm * $arg_Ym * $arg_Zm * 49) + ($arg_Xm_chunk_size * $arg_Ym * $arg_Zm * 49)) + 12))
-    memory_write_coords=$((($arg_blocks * 83) + ($arg_blocks * 83)))
-    max_write_buffer_size=$(($memory_write_lattice > $memory_write_coords ? $memory_write_lattice : $memory_write_coords))
-    memory=$(((($memory_matrices + $max_write_buffer_size) / 1000000) + 512)) # memory per core in megabytes (M or MB)
+    overall_core_count=$(($PROTEIN_NODE_COUNT * $PROTEIN_CORE_COUNT_PER_NODE))
+    Xm_chunk_size=$((($arg_Xm / $PROTEIN_CORE_COUNT_PER_NODE) + ($arg_Xm % $PROTEIN_CORE_COUNT_PER_NODE)))
+    blocks_chunk_size=$((($arg_blocks / $PROTEIN_CORE_COUNT_PER_NODE) + ($arg_blocks % $PROTEIN_CORE_COUNT_PER_NODE)))
+
+    mem_root_lattice_buffer=$((($arg_Xm * $arg_Ym * $arg_Zm * 14) + (12 + ($arg_Xm * $arg_Ym * $arg_Zm * 35))))
+    mem_root_coordinates_buffer=$(($arg_blocks * 83))
+    mem_per_cpu_lattice_buffer=$((($Xm_chunk_size * $arg_Ym * $arg_Zm * 14) + ($Xm_chunk_size * $arg_Ym * $arg_Zm * 35)))
+    mem_per_cpu_coordinates_buffer=$(($blocks_chunk_size * 83))
+
+    mem_root=$((($overall_core_count * 16) + ($arg_blocks * $arg_dimensions * 4) + ($arg_Xm * $arg_Ym * $arg_Zm * 4)))
+    if test $mem_root_lattice_buffer -gt $mem_root_coordinates_buffer; then
+        mem_root=$(($mem_root + $mem_root_lattice_buffer))
+        mem_per_cpu=$mem_per_cpu_lattice_buffer
+    else
+        mem_root=$(($mem_root + $mem_root_coordinates_buffer))
+        mem_per_cpu=$mem_per_cpu_coordinates_buffer
+    fi
+    memory=$(((($mem_root + ($overall_core_count * $mem_per_cpu)) / 1000000) + 512)) # memory per core in megabytes (M or MB)
 
     sbatch --constraint=elves --output=${slurm_output_file} --error=${slurm_output_file} --job-name=nv1.1d1-E${arg_bond_energy}L5 \
-        --mem-per-cpu=${memory}M --time=${max_job_time} --nodes=${PROTEIN_NODE_COUNT} --ntasks-per-node=${PROTEIN_CORE_COUNT_PER_NODE} --array=1-${duplicate_jobs_count} \
+        --mem=${memory}M --time=${max_job_time} --nodes=${PROTEIN_NODE_COUNT} --ntasks-per-node=${PROTEIN_CORE_COUNT_PER_NODE} --array=1-${duplicate_jobs_count} \
         ${slurm_cmd_mailing_flags} ${PROTEIN_PROJECT_DIR}/sbatch.sh $arg_bond_energy $arg_iterations $arg_splits $arg_blocks $arg_length $arg_Xm $arg_Ym $arg_Zm \
         $arg_dimensions $arg_write_id
 }
